@@ -2,7 +2,7 @@ import { findAllModelVendors } from '~/modules/llms/vendors/vendors.registry';
 import { getBackendCapabilities } from '~/modules/backend/store-backend-capabilities';
 import { llmsUpdateModelsForServiceOrThrow } from '~/modules/llms/llm.client';
 
-import type { DModelsService, DModelsServiceId } from '~/common/stores/llms/modelsservice.types';
+import type { DModelsService, DModelsServiceId } from '~/common/stores/llms/llms.service.types';
 import { llmsStoreActions, llmsStoreState } from '~/common/stores/llms/store-llms';
 
 
@@ -36,6 +36,7 @@ export async function reconfigureBackendModels(lastLlmReconfigHash: string, setL
   _isConfiguring = true;
   // FIXME: future: move this to the end of the function, but also with strong retry count and error catching, so one's app wouldn't loop upon each boot
   setLastReconfigHash(backendReconfigHash);
+  const initiallyEmpty = !llmsStoreState().llms?.length;
 
   // reconfigure these
   const servicesToReconfigure: DModelsService[] = [];
@@ -43,12 +44,13 @@ export async function reconfigureBackendModels(lastLlmReconfigHash: string, setL
   // add the backend services
   if (remoteServices)
     findAllModelVendors()
-      .filter(vendor => vendor.hasBackendCapKey && backendCaps[vendor.hasBackendCapKey])
+      .filter(vendor => vendor.hasServerConfigKey && backendCaps[vendor.hasServerConfigKey])
       .forEach(remoteVendor => {
 
         // find the first service for this vendor
-        const { sources: services, createModelsService } = llmsStoreState();
-        const remoteService = services.find(s => s.vId === remoteVendor.id) || createModelsService(remoteVendor);
+        const { sources: services } = llmsStoreState();
+        const remoteService = services.find(s => s.vId === remoteVendor.id)
+          || llmsStoreActions().createModelsService(remoteVendor);
         servicesToReconfigure.push(remoteService);
 
       });
@@ -86,12 +88,15 @@ export async function reconfigureBackendModels(lastLlmReconfigHash: string, setL
   // Re-rank the LLMs based on the order of configured services
   llmsStoreActions().rerankLLMsByServices(configuredServiceIds);
 
-  // if the current global Chat LLM is now hidden, auto-pick one that's not
-  const { llms: updatedLLMs, chatLLMId: newChatLLMId } = llmsStoreState();
-  if (newChatLLMId) {
-    const currentChatLLM = updatedLLMs.find(llm => llm.id === newChatLLMId);
-    if (!currentChatLLM || currentChatLLM.hidden)
-      llmsStoreActions().setChatLLMId(null);
+  // Auto-assignment conditions
+  if (initiallyEmpty) {
+    // in case we refreshed all vendors, auto-assign the primary chat model, so it doesn't get locked to the first vendor
+    llmsStoreActions().assignDomainModelId('primaryChat', null);
+  } else {
+    // in case the chat model becomes unavailable/hidden, we'll auto-reassign it
+    llmsStoreActions().autoReassignDomainModel('primaryChat', true, true);
+    llmsStoreActions().autoReassignDomainModel('codeApply', true, false);
+    llmsStoreActions().autoReassignDomainModel('fastUtil', true, false);
   }
 
   // end configuration

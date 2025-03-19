@@ -3,7 +3,7 @@ import * as React from 'react';
 import { FormControl, FormHelperText, Option, Select } from '@mui/joy';
 import HealthAndSafetyIcon from '@mui/icons-material/HealthAndSafety';
 
-import type { DModelsServiceId } from '~/common/stores/llms/modelsservice.types';
+import type { DModelsServiceId } from '~/common/stores/llms/llms.service.types';
 import { AlreadySet } from '~/common/components/AlreadySet';
 import { FormInputKey } from '~/common/components/forms/FormInputKey';
 import { FormLabelStart } from '~/common/components/forms/FormLabelStart';
@@ -39,12 +39,12 @@ export function GeminiServiceSetup(props: { serviceId: DModelsServiceId }) {
   const advanced = useToggleableBoolean(false);
 
   // external state
-  const { service, serviceAccess, serviceHasBackendCap, serviceHasLLMs, serviceSetupValid, updateSettings } =
+  const { service, serviceAccess, serviceHasCloudTenantConfig, serviceHasLLMs, serviceSetupValid, updateSettings } =
     useServiceSetup(props.serviceId, ModelVendorGemini);
 
   // derived state
   const { geminiKey, geminiHost, minSafetyLevel } = serviceAccess;
-  const needsUserKey = !serviceHasBackendCap;
+  const needsUserKey = !serviceHasCloudTenantConfig;
 
   const shallFetchSucceed = !needsUserKey || (!!geminiKey && serviceSetupValid);
   const showKeyError = !!geminiKey && !serviceSetupValid;

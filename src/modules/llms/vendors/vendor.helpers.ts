@@ -1,6 +1,6 @@
 import { getBackendCapabilities } from '~/modules/backend/store-backend-capabilities';
 
-import type { DModelsServiceId } from '~/common/stores/llms/modelsservice.types';
+import type { DModelsServiceId } from '~/common/stores/llms/llms.service.types';
 import { findModelsServiceOrNull } from '~/common/stores/llms/store-llms';
 
 import type { IModelVendor } from './IModelVendor';
@@ -28,6 +28,6 @@ export function findServiceAccessOrThrow<TServiceSettings extends object = {}, T
 
 export function vendorHasBackendCap<TServiceSettings extends Record<string, any> = {}, TAccess = unknown>(vendor: IModelVendor<TServiceSettings, TAccess>) {
   const backendCaps = getBackendCapabilities();
-  return vendor.hasBackendCapFn ? vendor.hasBackendCapFn(backendCaps)
-    : vendor.hasBackendCapKey ? !!backendCaps[vendor.hasBackendCapKey] : false;
+  return vendor.hasServerConfigFn ? vendor.hasServerConfigFn(backendCaps)
+    : vendor.hasServerConfigKey ? !!backendCaps[vendor.hasServerConfigKey] : false;
 }
