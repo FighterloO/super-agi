@@ -476,7 +476,16 @@ export namespace GeminiWire_API_Generate_Content {
 
     // [Gemini, 2025-01-23] CoT support - undocumented yet
     thinkingConfig: z.object({
+      /**
+       * [2025-04-17] Used to work with v1alpha API, now it seems to not work in any model/api version combo.
+       */
       includeThoughts: z.boolean().optional(),
+      /**
+       * [Gemini, 2025-04-17] Introduced in Flash-2.5-Preview to set the thinking budget.
+       * - must be an integer in the range 0 to 24576; budgets from 1 to 1024 tokens will be set to 1024
+       * - set to 0 to disable thinking
+       */
+      thinkingBudget: z.number().optional(),
     }).optional(),
 
     // Added on 2025-01-10 - Low-level - not requested/used yet but added
@@ -721,6 +730,7 @@ export namespace GeminiWire_API_Models_List {
     'generateMessage',
     'generateText',
     'predict', // appeared on 2025-02-09, for `models/imagen-3.0-generate-002`
+    'predictLongRunning', // appeared on 2025-04-10, for `models/veo-2.0-generate-001`
   ]);
 
   export type Model = z.infer<typeof Model_schema>;

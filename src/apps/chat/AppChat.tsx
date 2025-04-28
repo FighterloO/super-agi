@@ -18,6 +18,7 @@ import type { DConversation, DConversationId } from '~/common/stores/chat/chat.c
 import type { OptimaBarControlMethods } from '~/common/layout/optima/bar/OptimaBarDropdown';
 import { ConfirmationModal } from '~/common/components/modals/ConfirmationModal';
 import { ConversationsManager } from '~/common/chat-overlay/ConversationsManager';
+import { ErrorBoundary } from '~/common/components/ErrorBoundary';
 import { LLM_IF_ANT_PromptCaching, LLM_IF_OAI_Vision } from '~/common/stores/llms/llms.types';
 import { OptimaDrawerIn, OptimaPanelIn, OptimaToolbarIn } from '~/common/layout/optima/portals/OptimaPortalsIn';
 import { PanelResizeInset } from '~/common/components/panes/GoodPanelResizeHandler';
@@ -164,10 +165,9 @@ export function AppChat() {
   }, [chatPanes]);
 
   const beamsOpens = useAreBeamsOpen(paneBeamStores);
-  const beamOpenStoreInFocusedPane = React.useMemo(() => {
-    const open = focusedPaneIndex !== null ? (beamsOpens?.[focusedPaneIndex] ?? false) : false;
-    return open ? paneBeamStores?.[focusedPaneIndex!] ?? null : null;
-  }, [beamsOpens, focusedPaneIndex, paneBeamStores]);
+  const beamOpenStoreInFocusedPane = focusedPaneIndex === null ? null
+    : !beamsOpens?.[focusedPaneIndex] ? null
+      : paneBeamStores?.[focusedPaneIndex] ?? null;
 
   const {
     // focused
@@ -188,7 +188,7 @@ export function AppChat() {
   // const focusedConversationWorkspaceId = workspaceForConversationIdentity(focusedPaneConversationId);
   //// const focusedConversationWorkspace = useWorkspaceIdForConversation(focusedPaneConversationId);
 
-  const { mayWork: capabilityHasT2I } = useCapabilityTextToImage();
+  const { mayWork: capabilityHasT2I, mayEdit: capabilityHasT2IEdit } = useCapabilityTextToImage();
 
   const activeFolderId = useFolderStore(({ enableFolders, folders }) => {
     const activeFolderId = enableFolders ? _activeFolderId : null;
@@ -614,14 +614,14 @@ export function AppChat() {
         const _panesCount = chatPanes.length;
         const _keyAndId = `chat-pane-${pane.paneId}`;
         const _sepId = `sep-pane-${idx}`;
-        return <WorkspaceIdProvider conversationId={_paneIsFocused ? _paneConversationId : null} key={_keyAndId}>
+        return <WorkspaceIdProvider conversationId={_paneIsFocused ? _paneConversationId : null} key={_keyAndId}><ErrorBoundary>
 
           <Panel
             id={_keyAndId}
             order={idx}
             collapsible={chatPanes.length === 2}
             defaultSize={(_panesCount === 3 && idx === 1) ? 34 : Math.round(100 / _panesCount)}
-            minSize={20}
+            // minSize={20 /* IMPORTANT: this forces a reflow even on a simple on hover */}
             onClick={(event) => {
               const setFocus = chatPanes.length < 2 || !event.altKey;
               setFocusedPaneIndex(setFocus ? idx : -1);
@@ -660,6 +660,7 @@ export function AppChat() {
               }),
               ...((_paneIsIncognito && {
                 backgroundColor: theme.palette.background.level3,
+                backgroundImage: 'repeating-linear-gradient(45deg, rgba(0,0,0,0.03), rgba(0,0,0,0.03) 10px, transparent 10px, transparent 20px)',
               })),
             }}
           >
@@ -669,6 +670,7 @@ export function AppChat() {
                 paneIdx={idx}
                 conversationId={_paneConversationId}
                 isFocused={_paneIsFocused}
+                isIncognito={_paneIsIncognito}
                 onConversationDelete={handleDeleteConversations}
               />
             )}
@@ -724,7 +726,7 @@ export function AppChat() {
             </PanelResizeHandle>
           )}
 
-        </WorkspaceIdProvider>;
+        </ErrorBoundary></WorkspaceIdProvider>;
       })}
 
     </PanelGroup>
@@ -735,6 +737,7 @@ export function AppChat() {
       composerTextAreaRef={composerTextAreaRef}
       targetConversationId={focusedPaneConversationId}
       capabilityHasT2I={capabilityHasT2I}
+      capabilityHasT2IEdit={capabilityHasT2IEdit}
       isMulticast={!isMultiConversationId ? null : isComposerMulticast}
       isDeveloperMode={isFocusedChatDeveloper}
       onAction={handleComposerAction}
