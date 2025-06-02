@@ -5,6 +5,7 @@ import { Box, Dropdown, IconButton, ListDivider, ListItem, ListItemDecorator, Me
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import EngineeringIcon from '@mui/icons-material/Engineering';
 import FeedbackIcon from '@mui/icons-material/Feedback';
+import HistoryIcon from '@mui/icons-material/History';
 import LightbulbOutlinedIcon from '@mui/icons-material/LightbulbOutlined';
 import MenuIcon from '@mui/icons-material/Menu';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
@@ -23,12 +24,12 @@ import { Release } from '~/common/app.release';
 import { TooltipOutlined } from '~/common/components/TooltipOutlined';
 import { checkVisibleNav, NavItemApp } from '~/common/app.nav';
 import { navigateToIndex, ROUTE_INDEX } from '~/common/app.routes';
-// import { useDynamicUsersnap } from '~/common/components/3rdparty/Usersnap';
 import { useOverlayComponents } from '~/common/layout/overlays/useOverlayComponents';
 
 import { InvertedBar, InvertedBarCornerItem } from '../InvertedBar';
 import { PopupPanel } from '../panel/PopupPanel';
 import { optimaOpenDrawer, optimaOpenPanel, optimaTogglePanel, useOptimaPanelOpen } from '../useOptima';
+import { scratchClipSupported, useScratchClipVisibility } from '../scratchclip/store-scratchclip';
 import { useOptimaPortalHasInputs } from '../portals/useOptimaPortalHasInputs';
 import { useOptimaPortalOutRef } from '../portals/useOptimaPortalOutRef';
 
@@ -99,10 +100,10 @@ export function OptimaBar(props: { component: React.ElementType, currentApp?: Na
    * - prob not because this could be a per-company deployment, and we don't know the tenant's release notes
    */
   const releaseNotesUrl = Release.App.releaseNotes;
-  // const { openUsersnap, loadingError: usersnapLoadingError } = useDynamicUsersnap();
   const { showPromisedOverlay } = useOverlayComponents();
   const hasDrawerContent = useOptimaPortalHasInputs('optima-portal-drawer');
   const { panelAsPopup, panelHasContent, panelShownAsPanel, panelShownAsPopup } = useOptimaPanelOpen(props.isMobile, props.currentApp);
+  const { isVisible: isScratchClipVisible, toggleVisibility: toggleScratchClipVisibility } = useScratchClipVisibility();
 
   // derived state
   const navIsShown = checkVisibleNav(props.currentApp);
@@ -132,8 +133,8 @@ export function OptimaBar(props: { component: React.ElementType, currentApp?: Na
   }, [releaseNotesUrl, showPromisedOverlay]);
 
   const handleShowTechnologies = React.useCallback(async () => {
-    return await showPromisedOverlay<void>('app-recent-changes', {}, ({ onResolve }) =>
-      <GoodModal open onClose={onResolve} noTitleBar unfilterBackdrop>
+    return await showPromisedOverlay<boolean>('app-recent-changes', { rejectWithValue: false }, ({ onUserReject }) =>
+      <GoodModal open onClose={onUserReject} noTitleBar unfilterBackdrop>
         <BuildInfoCard noMargin />
       </GoodModal>,
     );
@@ -172,7 +173,7 @@ export function OptimaBar(props: { component: React.ElementType, currentApp?: Na
       {!props.isMobile && (
         <Dropdown>
           <MenuButton
-            aria-label='Notifications Menu'
+            aria-label='Quick Tools Menu'
             slots={{ root: IconButton }}
             slotProps={{ root: { size: 'md' } }}
           >
@@ -201,15 +202,11 @@ export function OptimaBar(props: { component: React.ElementType, currentApp?: Na
             </MenuItem>
 
 
+            {scratchClipSupported() && <MenuItem onClick={toggleScratchClipVisibility}>
+              <ListItemDecorator><HistoryIcon /></ListItemDecorator>
+              {isScratchClipVisible ? 'Hide ' : ''}Clipboard History
+            </MenuItem>}
 
-            {/*<ListDivider />*/}
-
-            {/*<TooltipOutlined title={usersnapLoadingError}>*/}
-            {/*  <MenuItem onClick={openUsersnap}>*/}
-            {/*    <ListItemDecorator><FeedbackIcon /></ListItemDecorator>*/}
-            {/*    Feedback -&gt; Enrico*/}
-            {/*  </MenuItem>*/}
-            {/*</TooltipOutlined>*/}
           </Menu>
         </Dropdown>
       )}
