@@ -1,10 +1,7 @@
-import { AnthropicIcon } from '~/common/components/icons/vendors/AnthropicIcon';
 import { apiAsync } from '~/common/util/trpc.client';
 
 import type { AnthropicAccessSchema } from '../../server/anthropic/anthropic.router';
 import type { IModelVendor } from '../IModelVendor';
-
-import { AnthropicServiceSetup } from './AnthropicServiceSetup';
 
 
 // special symbols
@@ -20,14 +17,11 @@ export const ModelVendorAnthropic: IModelVendor<DAnthropicServiceSettings, Anthr
   id: 'anthropic',
   name: 'Anthropic',
   displayRank: 12,
+  displayGroup: 'popular',
   location: 'cloud',
   brandColor: '#cc785c',
   instanceLimit: 1,
   hasServerConfigKey: 'hasLlmAnthropic',
-
-  // components
-  Icon: AnthropicIcon,
-  ServiceSetupComponent: AnthropicServiceSetup,
 
   // functions
   getTransportAccess: (partialSetup): AnthropicAccessSchema => ({

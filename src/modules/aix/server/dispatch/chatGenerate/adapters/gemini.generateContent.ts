@@ -1,17 +1,20 @@
 import type { AixAPI_Model, AixAPIChatGenerate_Request, AixMessages_ChatMessage, AixParts_DocPart, AixTools_ToolDefinition, AixTools_ToolsPolicy } from '../../../api/aix.wiretypes';
 import { GeminiWire_API_Generate_Content, GeminiWire_ContentParts, GeminiWire_Messages, GeminiWire_Safety, GeminiWire_ToolDeclarations } from '../../wiretypes/gemini.wiretypes';
 
-import { approxDocPart_To_String, approxInReferenceTo_To_XMLString } from './anthropic.messageCreate';
+import { aixSpillSystemToUser, approxDocPart_To_String, approxInReferenceTo_To_XMLString } from './adapters.common';
 
 
 // configuration
-const hotFixImagePartsFirst = true;
+const hotFixImagePartsFirst = true; // https://ai.google.dev/gemini-api/docs/image-understanding#tips-best-practices
 const hotFixReplaceEmptyMessagesWithEmptyTextPart = true;
 
 
-export function aixToGeminiGenerateContent(model: AixAPI_Model, chatGenerate: AixAPIChatGenerate_Request, geminiSafetyThreshold: GeminiWire_Safety.HarmBlockThreshold, jsonOutput: boolean, _streaming: boolean): TRequest {
+export function aixToGeminiGenerateContent(model: AixAPI_Model, _chatGenerate: AixAPIChatGenerate_Request, geminiSafetyThreshold: GeminiWire_Safety.HarmBlockThreshold, jsonOutput: boolean, _streaming: boolean): TRequest {
 
   // Note: the streaming setting is ignored as it only belongs in the path
+
+  // Pre-process CGR - approximate spill of System to User message - note: no need to flush as every message is not batched
+  const chatGenerate = aixSpillSystemToUser(_chatGenerate);
 
   // System Instructions
   let systemInstruction: TRequest['systemInstruction'] = undefined;
@@ -26,6 +29,10 @@ export function aixToGeminiGenerateContent(model: AixAPI_Model, chatGenerate: Ai
         case 'doc':
           acc.parts.push(GeminiWire_ContentParts.TextPart(approxDocPart_To_String(part)));
           break;
+
+        case 'inline_image':
+          // we have already removed image parts from the system message
+          throw new Error('Gemini: images have to be in user messages, not in system message');
 
         case 'meta_cache_control':
           // ignore this breakpoint hint - Anthropic only
@@ -49,8 +56,6 @@ export function aixToGeminiGenerateContent(model: AixAPI_Model, chatGenerate: Ai
   // Construct the request payload
   const payload: TRequest = {
     contents,
-    tools: chatGenerate.tools && _toGeminiTools(chatGenerate.tools),
-    toolConfig: chatGenerate.toolsPolicy && _toGeminiToolConfig(chatGenerate.toolsPolicy),
     safetySettings: _toGeminiSafetySettings(geminiSafetyThreshold),
     systemInstruction,
     generationConfig: {
@@ -72,21 +77,43 @@ export function aixToGeminiGenerateContent(model: AixAPI_Model, chatGenerate: Ai
   }
 
   // Thinking models: thinking budget and show thoughts
-  if (model.vndGeminiShowThoughts === true || model.vndGeminiThinkingBudget !== undefined) {
+  if (model.vndGeminiShowThoughts === true || model.vndGeminiThinkingBudget !== undefined || model.vndGeminiThinkingLevel) {
     const thinkingConfig: Exclude<TRequest['generationConfig'], undefined>['thinkingConfig'] = {};
 
     // This seems deprecated keep it in case Gemini turns it on again
     if (model.vndGeminiShowThoughts)
       thinkingConfig.includeThoughts = true;
 
-    // 0 disables thinking explicitly
-    if (model.vndGeminiThinkingBudget !== undefined) {
+    // [Gemini 3, 2025-11-18] Thinking Level (replaces thinkingBudget for Gemini 3)
+    // CRITICAL: Cannot use both thinkingLevel and thinkingBudget (400 error)
+    if (model.vndGeminiThinkingLevel) {
+      thinkingConfig.thinkingLevel = model.vndGeminiThinkingLevel;
+    }
+    // [Gemini 2.x] Thinking Budget (0 disables thinking explicitly)
+    else if (model.vndGeminiThinkingBudget !== undefined) {
       if (model.vndGeminiThinkingBudget > 0)
         thinkingConfig.includeThoughts = true;
       thinkingConfig.thinkingBudget = model.vndGeminiThinkingBudget;
     }
 
     payload.generationConfig!.thinkingConfig = thinkingConfig;
+  }
+
+  // [Gemini, 2025-11-18] Media Resolution: controls vision processing quality
+  if (model.vndGeminiMediaResolution) {
+    const mediaResolutionValuesMap = {
+      'mr_low': 'MEDIA_RESOLUTION_LOW',
+      'mr_medium': 'MEDIA_RESOLUTION_MEDIUM',
+      'mr_high': 'MEDIA_RESOLUTION_HIGH',
+    } as const;
+    payload.generationConfig!.mediaResolution = mediaResolutionValuesMap[model.vndGeminiMediaResolution];
+  }
+
+  // [Gemini, 2025-10-02] Image generation: aspect ratio configuration
+  if (model.vndGeminiAspectRatio) {
+    payload.generationConfig!.imageConfig = {
+      aspectRatio: model.vndGeminiAspectRatio,
+    };
   }
 
   // [Gemini, 2025-05-20] Experimental Audio generation (TTS - audio only, no text): Request
@@ -117,11 +144,77 @@ export function aixToGeminiGenerateContent(model: AixAPI_Model, chatGenerate: Ai
     // payload.generationConfig!.mediaResolution = 'MEDIA_RESOLUTION_HIGH';
   }
 
-  // TODO: Google Search Grounding: for the models that support it, it shall be declared and runtime toggleable
-  // it then becomes just a metter of:
-  // - payload.tools = [...payload.tools, { googleSearch: {} }]; -- for most models
-  // - emitting the missing particles, parsing, rendering
-  // - working around the limitations and idiosyncrasies of the Search API
+
+  // --- Tools ---
+
+  // Allow/deny auto-adding hosted tools when custom tools are present
+  const hasCustomTools = chatGenerate.tools?.some(t => t.type === 'function_call');
+  const hasRestrictivePolicy = chatGenerate.toolsPolicy?.type === 'any' || chatGenerate.toolsPolicy?.type === 'function_call';
+  const skipHostedToolsDueToCustomTools = hasCustomTools && hasRestrictivePolicy; // FIXME: re-evaluate in the future whether this shall be on higher information levels (callers)
+
+  // Function Calls (Custom Tools)
+  if (chatGenerate.tools) {
+    payload.tools = _toGeminiTools(chatGenerate.tools);
+    if (chatGenerate.toolsPolicy)
+      payload.toolConfig = _toGeminiToolConfig(chatGenerate.toolsPolicy);
+  }
+
+  // Hosted tools
+
+  // [Gemini, 2025-11-18] Code Execution: add tool when enabled
+  if (model.vndGeminiCodeExecution === 'auto' && !skipHostedToolsDueToCustomTools) {
+    if (!payload.tools) payload.tools = [];
+
+    // Build the Code Execution tool configuration (empty object)
+    const codeExecutionTool: NonNullable<TRequest['tools']>[number] = {
+      codeExecution: {},
+    };
+
+    // Add to tools array
+    payload.tools.push(codeExecutionTool);
+  }
+
+  // [Gemini, 2025-11-01] Computer Use: add tool when environment is specified
+  if (model.vndGeminiComputerUse && !skipHostedToolsDueToCustomTools) {
+    if (!payload.tools) payload.tools = [];
+
+    // Build the Computer Use tool configuration
+    const computerUseTool: NonNullable<TRequest['tools']>[number] = {
+      computerUse: {
+        environment: model.vndGeminiComputerUse === 'browser' ? 'ENVIRONMENT_BROWSER' : 'ENVIRONMENT_BROWSER',
+      },
+    };
+
+    // Add to tools array
+    payload.tools.push(computerUseTool);
+  }
+
+  // [Gemini, 2025-10-13] Google Search Grounding: add tool when enabled
+  if (model.vndGeminiGoogleSearch && !skipHostedToolsDueToCustomTools) {
+    if (!payload.tools) payload.tools = [];
+
+    // Build the Google Search tool configuration
+    const googleSearchTool: NonNullable<TRequest['tools']>[number] = {
+      googleSearch: _buildGoogleSearchConfig(model.vndGeminiGoogleSearch),
+    };
+
+    // Add to tools array
+    payload.tools.push(googleSearchTool);
+  }
+
+  // [Gemini, 2025-08-18] URL Context: add tool when enabled
+  // Auto-enable with Google Search for backwards compatibility and ease of use
+  if (model.vndGeminiUrlContext === 'auto' && !skipHostedToolsDueToCustomTools) {
+    if (!payload.tools) payload.tools = [];
+
+    // Build the URL Context tool configuration (empty object)
+    const urlContextTool: NonNullable<TRequest['tools']>[number] = {
+      urlContext: {},
+    };
+
+    // Add to tools array
+    payload.tools.push(urlContextTool);
+  }
 
   // Preemptive error detection with server-side payload validation before sending it upstream
   const validated = GeminiWire_API_Generate_Content.Request_schema.safeParse(payload);
@@ -147,6 +240,8 @@ function _toGeminiContents(chatSequence: AixMessages_ChatMessage[]): GeminiWire_
     const parts: GeminiWire_ContentParts.ContentPart[] = [];
 
     if (hotFixImagePartsFirst) {
+      // https://ai.google.dev/gemini-api/docs/image-understanding#tips-best-practices
+      // "When using a single image with text, place the text prompt after the image part in the contents array."
       message.parts.sort((a, b) => {
         if (a.pt === 'inline_image' && b.pt !== 'inline_image') return -1;
         if (a.pt !== 'inline_image' && b.pt === 'inline_image') return 1;
@@ -326,6 +421,9 @@ function _toGeminiTools(itds: AixTools_ToolDefinition[]): NonNullable<TRequest['
         });
         break;
 
+      default: // Note: Gemini's tool function doesn't break on unknown tools, so we need the default case here
+        throw new Error('Tool ${itd.type} is not supported by Gemini');
+
     }
   });
 
@@ -364,4 +462,44 @@ function _toGeminiSafetySettings(threshold: GeminiWire_Safety.HarmBlockThreshold
 function _toApproximateGeminiDocPart(aixPartsDocPart: AixParts_DocPart): GeminiWire_ContentParts.ContentPart {
   // NOTE: we keep this function because we could use Gemini's different way to represent documents in the future...
   return GeminiWire_ContentParts.TextPart(approxDocPart_To_String(aixPartsDocPart));
+}
+
+function _buildGoogleSearchConfig(searchGrounding: AixAPI_Model['vndGeminiGoogleSearch']): NonNullable<NonNullable<TRequest['tools']>[number]['googleSearch']> {
+
+  // enabled: any time interval
+  if (searchGrounding === 'unfiltered')
+    return {};
+
+  // calculate the time range based on the filter value
+  const until = new Date();
+  const startTime = new Date(until);
+  switch (searchGrounding) {
+    case '1d':
+      startTime.setDate(until.getDate() - 1);
+      // Fix "Invalid time range: end_time must be 24 hours after start_time."
+      until.setHours(until.getHours() + 1);
+      break;
+    case '1w':
+      startTime.setDate(until.getDate() - 7);
+      break;
+    case '1m':
+      startTime.setMonth(until.getMonth() - 1);
+      break;
+    case '6m':
+      startTime.setMonth(until.getMonth() - 6);
+      break;
+    case '1y':
+      startTime.setFullYear(until.getFullYear() - 1);
+      break;
+    default:
+      console.warn(`Unknown Google Search grounding value: ${searchGrounding}`);
+      return {};
+  }
+  // format timestamps: https://ai.google.dev/api/caching#Interval
+  return {
+    timeRangeFilter: {
+      startTime: startTime.toISOString().replace(/\.\d{3}Z$/, 'Z'),
+      endTime: until.toISOString().replace(/\.\d{3}Z$/, 'Z'),
+    },
+  };
 }

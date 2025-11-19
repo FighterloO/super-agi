@@ -1,10 +1,6 @@
-import { AlibabaCloudIcon } from '~/common/components/icons/vendors/AlibabaCloudIcon';
-
 import type { IModelVendor } from '../IModelVendor';
 import type { OpenAIAccessSchema } from '../../server/openai/openai.router';
 import { ModelVendorOpenAI } from '../openai/openai.vendor';
-
-import { AlibabaServiceSetup } from './AlibabaServiceSetup';
 
 
 interface DAlibabaServiceSettings {
@@ -16,13 +12,10 @@ export const ModelVendorAlibaba: IModelVendor<DAlibabaServiceSettings, OpenAIAcc
   id: 'alibaba',
   name: 'Alibaba Cloud',
   displayRank: 35,
+  displayGroup: 'cloud',
   location: 'cloud',
   instanceLimit: 1,
   hasServerConfigKey: 'hasLlmAlibaba',
-
-  // components
-  Icon: AlibabaCloudIcon,
-  ServiceSetupComponent: AlibabaServiceSetup,
 
   // functions
   initializeSetup: () => ({

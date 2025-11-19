@@ -1,11 +1,7 @@
-import { XAIIcon } from '~/common/components/icons/vendors/XAIIcon';
-
 import type { IModelVendor } from '../IModelVendor';
 import type { OpenAIAccessSchema } from '../../server/openai/openai.router';
 
 import { ModelVendorOpenAI } from '../openai/openai.vendor';
-
-import { XAIServiceSetup } from './XAIServiceSetup';
 
 
 export interface DXAIServiceSettings {
@@ -16,13 +12,10 @@ export const ModelVendorXAI: IModelVendor<DXAIServiceSettings, OpenAIAccessSchem
   id: 'xai',
   name: 'xAI',
   displayRank: 15,
+  displayGroup: 'cloud',
   location: 'cloud',
   instanceLimit: 1,
   hasServerConfigKey: 'hasLlmXAI',
-
-  // Components
-  Icon: XAIIcon,
-  ServiceSetupComponent: XAIServiceSetup,
 
   // functions
   initializeSetup: () => ({ xaiKey: '' }),

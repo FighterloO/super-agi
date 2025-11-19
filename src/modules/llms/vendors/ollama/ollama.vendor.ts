@@ -1,10 +1,7 @@
-import { OllamaIcon } from '~/common/components/icons/vendors/OllamaIcon';
 import { apiAsync } from '~/common/util/trpc.client';
 
 import type { IModelVendor } from '../IModelVendor';
 import type { OllamaAccessSchema } from '../../server/ollama/ollama.router';
-
-import { OllamaServiceSetup } from './OllamaServiceSetup';
 
 
 interface DOllamaServiceSettings {
@@ -17,13 +14,10 @@ export const ModelVendorOllama: IModelVendor<DOllamaServiceSettings, OllamaAcces
   id: 'ollama',
   name: 'Ollama',
   displayRank: 54,
+  displayGroup: 'local',
   location: 'local',
   instanceLimit: 2,
   hasServerConfigKey: 'hasLlmOllama',
-
-  // components
-  Icon: OllamaIcon,
-  ServiceSetupComponent: OllamaServiceSetup,
 
   // functions
   getTransportAccess: (partialSetup): OllamaAccessSchema => ({

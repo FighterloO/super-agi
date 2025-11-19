@@ -1,11 +1,7 @@
-import { GroqIcon } from '~/common/components/icons/vendors/GroqIcon';
-
 import type { IModelVendor } from '../IModelVendor';
 import type { OpenAIAccessSchema } from '../../server/openai/openai.router';
 
 import { ModelVendorOpenAI } from '../openai/openai.vendor';
-
-import { GroqServiceSetup } from './GroqServiceSetup';
 
 
 interface DGroqServiceSettings {
@@ -16,13 +12,10 @@ export const ModelVendorGroq: IModelVendor<DGroqServiceSettings, OpenAIAccessSch
   id: 'groq',
   name: 'Groq',
   displayRank: 32,
+  displayGroup: 'cloud',
   location: 'cloud',
   instanceLimit: 1,
   hasServerConfigKey: 'hasLlmGroq',
-
-  // components
-  Icon: GroqIcon,
-  ServiceSetupComponent: GroqServiceSetup,
 
   // functions
   initializeSetup: () => ({

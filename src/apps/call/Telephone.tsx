@@ -15,7 +15,7 @@ import { useChatLLMDropdown } from '../chat/components/layout-bar/useLLMDropdown
 
 import { SystemPurposeId, SystemPurposes } from '../../data';
 import { elevenLabsSpeakText } from '~/modules/elevenlabs/elevenlabs.client';
-import { AixChatGenerateContent_DMessage, aixChatGenerateContent_DMessage_FromConversation } from '~/modules/aix/client/aix.client';
+import { AixChatGenerateContent_DMessageGuts, aixChatGenerateContent_DMessage_FromConversation } from '~/modules/aix/client/aix.client';
 import { useElevenLabsVoiceDropdown } from '~/modules/elevenlabs/useElevenLabsVoiceDropdown';
 
 import type { OptimaBarControlMethods } from '~/common/layout/optima/bar/OptimaBarDropdown';
@@ -25,7 +25,7 @@ import { OptimaPanelGroupedList } from '~/common/layout/optima/panel/OptimaPanel
 import { OptimaPanelIn, OptimaToolbarIn } from '~/common/layout/optima/portals/OptimaPortalsIn';
 import { SpeechResult, useSpeechRecognition } from '~/common/components/speechrecognition/useSpeechRecognition';
 import { conversationTitle, remapMessagesSysToUsr } from '~/common/stores/chat/chat.conversation';
-import { createDMessageFromFragments, createDMessageTextContent, DMessage, messageFragmentsReduceText } from '~/common/stores/chat/chat.message';
+import { createDMessageFromFragments, createDMessageTextContent, DMessage, messageFragmentsReduceText, messageWasInterruptedAtStart } from '~/common/stores/chat/chat.message';
 import { createErrorContentFragment } from '~/common/stores/chat/chat.fragments';
 import { launchAppChat, navigateToIndex } from '~/common/app.routes';
 import { useChatStore } from '~/common/stores/chat/store-chats';
@@ -254,12 +254,16 @@ export function Telephone(props: {
       'call',
       callMessages[0].id,
       { abortSignal: responseAbortController.current.signal },
-      (update: AixChatGenerateContent_DMessage, _isDone: boolean) => {
+      (update: AixChatGenerateContent_DMessageGuts, _isDone: boolean) => {
         const updatedText = messageFragmentsReduceText(update.fragments).trim();
         if (updatedText)
           setPersonaTextInterim(finalText = updatedText);
       },
     ).then((status) => {
+
+      // don't add the message to conversation if it was interrupted with no content
+      if (messageWasInterruptedAtStart(status.lastDMessage))
+        return;
 
       // whether status.outcome === 'success' or not, we get a valid DMessage, eventually with Error Fragments inside
       const fullMessage = createDMessageFromFragments('assistant', status.lastDMessage.fragments);
@@ -273,8 +277,8 @@ export function Telephone(props: {
     }).catch((err: DOMException) => {
       if (err?.name !== 'AbortError') {
         // create an error message to explain the exception
-        const errorMesage = createDMessageFromFragments('assistant', [createErrorContentFragment(err.message || err.toString())]);
-        setCallMessages(messages => [...messages, errorMesage]); // [state] append assistant:call_response-ERROR
+        const errorMessage = createDMessageFromFragments('assistant', [createErrorContentFragment(err.message || err.toString())]);
+        setCallMessages(messages => [...messages, errorMessage]); // [state] append assistant:call_response-ERROR
       }
     }).finally(() => {
       setPersonaTextInterim(null);
@@ -310,6 +314,7 @@ export function Telephone(props: {
   const isMicEnabled = recognitionState.isAvailable;
   const isTTSEnabled = true;
   const isEnabled = isMicEnabled && isTTSEnabled;
+  const micErrorMessage = recognitionState.errorMessage;
 
 
   return <>
@@ -346,7 +351,7 @@ export function Telephone(props: {
       callerName={isConnected ? undefined : personaName}
       statusText={isRinging ? '' /*'is calling you'*/ : isDeclined ? 'call declined' : isEnded ? 'call ended' : callElapsedTime}
       regardingText={chatTitle}
-      micError={!isMicEnabled} speakError={!isTTSEnabled}
+      micError={!isMicEnabled} micErrorMessage={micErrorMessage} speakError={!isTTSEnabled}
     />
 
     {/* Live Transcript, w/ streaming messages, audio indication, etc. */}

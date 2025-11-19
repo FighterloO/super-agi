@@ -1,11 +1,9 @@
-import { OpenRouterIcon } from '~/common/components/icons/vendors/OpenRouterIcon';
-
 import type { IModelVendor } from '../IModelVendor';
 import type { OpenAIAccessSchema } from '../../server/openai/openai.router';
 
-import { ModelVendorOpenAI } from '../openai/openai.vendor';
+import { getLLMPricing } from '~/common/stores/llms/llms.types';
 
-import { OpenRouterServiceSetup } from './OpenRouterServiceSetup';
+import { ModelVendorOpenAI } from '../openai/openai.vendor';
 
 
 // special symbols
@@ -32,14 +30,11 @@ export const ModelVendorOpenRouter: IModelVendor<DOpenRouterServiceSettings, Ope
   id: 'openrouter',
   name: 'OpenRouter',
   displayRank: 40,
+  displayGroup: 'popular',
   location: 'cloud',
   instanceLimit: 1,
   hasFreeModels: true,
   hasServerConfigKey: 'hasLlmOpenRouter',
-
-  // components
-  Icon: OpenRouterIcon,
-  ServiceSetupComponent: OpenRouterServiceSetup,
 
   // functions
   initializeSetup: (): DOpenRouterServiceSettings => ({
@@ -59,7 +54,7 @@ export const ModelVendorOpenRouter: IModelVendor<DOpenRouterServiceSettings, Ope
   rateLimitChatGenerate: async (llm) => {
     const now = Date.now();
     const elapsed = now - nextGenerationTs;
-    const wait = llm.pricing?.chat?._isFree
+    const wait = getLLMPricing(llm)?.chat?._isFree
       ? 5000 + 100 /* 5 seconds for free call, plus some safety margin */
       : 100;
 

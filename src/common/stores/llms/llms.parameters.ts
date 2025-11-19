@@ -77,6 +77,20 @@ export const DModelParameterRegistry = {
     // initialValue: false, // we don't need the initial value here, will be assumed off
   } as const,
 
+  llmVndAnt1MContext: {
+    label: '1M Context Window (Beta)',
+    type: 'boolean' as const,
+    description: 'Enable 1M token context window with premium pricing for >200K input tokens',
+    // No initialValue - undefined means off (e.g. default 200K context window)
+  } as const,
+
+  llmVndAntSkills: {
+    label: 'Document Skills',
+    type: 'string' as const,
+    description: 'Comma-separated skills (xlsx,pptx,pdf,docx)',
+    initialValue: '', // empty string = disabled
+  } as const,
+
   llmVndAntThinkingBudget: {
     label: 'Thinking Budget',
     type: 'integer' as const,
@@ -86,6 +100,64 @@ export const DModelParameterRegistry = {
     nullable: {
       meaning: 'Disable extended thinking',
     } as const,
+  } as const,
+
+  llmVndAntWebFetch: {
+    label: 'Web Fetch',
+    type: 'enum' as const,
+    description: 'Enable fetching content from web pages and PDFs',
+    values: ['auto', 'off'] as const,
+    // No initialValue - undefined means off (same as 'off')
+  } as const,
+
+  llmVndAntWebSearch: {
+    label: 'Web Search',
+    type: 'enum' as const,
+    description: 'Enable web search for real-time information',
+    values: ['auto', 'off'] as const,
+    // No initialValue - undefined means off (same as 'off')
+  } as const,
+
+  llmVndGeminiAspectRatio: {
+    label: 'Aspect Ratio',
+    type: 'enum' as const,
+    description: 'Controls the aspect ratio of generated images',
+    values: ['1:1', '2:3', '3:2', '3:4', '4:3', '9:16', '16:9', '21:9'] as const,
+    // No initial value - when undefined, the model decides the aspect ratio
+  } as const,
+
+  llmVndGeminiCodeExecution: {
+    label: 'Code Execution',
+    type: 'enum' as const,
+    description: 'Enable automatic Python code generation and execution by the model',
+    values: ['auto'] as const,
+    // No initialValue - undefined means off
+  } as const,
+
+  llmVndGeminiComputerUse: {
+    label: 'Computer Use Environment',
+    type: 'enum' as const,
+    description: 'Environment type for Computer Use tool (required for Computer Use model)',
+    values: ['browser'] as const,
+    initialValue: 'browser',
+    // requiredFallback: 'browser', // See `const _requiredParamId: DModelParameterId[]` in llms.parameters.ts for why custom params don't have required values at AIX invocation...
+    hidden: true,
+  } as const,
+
+  llmVndGeminiGoogleSearch: {
+    label: 'Google Search',
+    type: 'enum' as const,
+    description: 'Enable Google Search grounding with optional time filter',
+    values: ['unfiltered', '1d', '1w', '1m', '6m', '1y'] as const,
+    // No initialValue - undefined means off
+  } as const,
+
+  llmVndGeminiMediaResolution: {
+    label: 'Media Resolution',
+    type: 'enum' as const,
+    description: 'Controls vision processing quality for multimodal inputs. Higher resolution improves text reading and detail identification but increases token usage.',
+    values: ['mr_high', 'mr_medium', 'mr_low'] as const,
+    // No initialValue - undefined: "If unspecified, the model uses optimal defaults based on the media type." (Images: high, PDFs: medium, Videos: low/medium (rec: high for OCR))
   } as const,
 
   llmVndGeminiShowThoughts: {
@@ -108,6 +180,35 @@ export const DModelParameterRegistry = {
     description: 'Budget for extended thinking. 0 disables thinking. If not set, the model chooses automatically.',
   } as const,
 
+  llmVndGeminiThinkingLevel: {
+    label: 'Thinking Level',
+    type: 'enum' as const,
+    description: 'Controls internal reasoning depth. Replaces thinking_budget for Gemini 3 models. When unset, the model decides dynamically.',
+    values: ['high', 'medium' /* not present at launch */, 'low' /* default when unset */] as const,
+    // No initialValue - undefined means 'dynamic', which for Gemini Pro is the same as 'high' (which is the equivalent of 'medium' for OpenAI's effort levels.. somehow)
+  } as const,
+
+  // NOTE: we don't have this as a parameter, as for now we use it in tandem with llmVndGeminiGoogleSearch
+  // llmVndGeminiUrlContext: {
+  //   label: 'URL Context',
+  //   type: 'enum' as const,
+  //   description: 'Enable fetching and analyzing content from URLs provided in prompts (up to 20 URLs, 34MB each)',
+  //   values: ['auto'] as const,
+  //   // No initialValue - undefined means off
+  // } as const,
+
+  // Moonshot-specific parameters
+
+  llmVndMoonshotWebSearch: {
+    label: 'Web Search',
+    type: 'enum' as const,
+    description: 'Enable Kimi\'s $web_search builtin function for real-time web search ($0.005 per search)',
+    values: ['auto'] as const,
+    // No initialValue - undefined means off
+  } as const,
+
+  // OpenAI-specific parameters
+
   llmVndOaiReasoningEffort: {
     label: 'Reasoning Effort',
     type: 'enum' as const,
@@ -116,11 +217,27 @@ export const DModelParameterRegistry = {
     requiredFallback: 'medium',
   } as const,
 
+  llmVndOaiReasoningEffort4: {
+    label: 'Reasoning Effort',
+    type: 'enum' as const,
+    description: 'Constrains effort on reasoning for OpenAI advanced reasoning models',
+    values: ['minimal', 'low', 'medium', 'high'] as const,
+    requiredFallback: 'medium',
+  } as const,
+
   llmVndOaiRestoreMarkdown: {
     label: 'Restore Markdown',
     type: 'boolean' as const,
     description: 'Restore Markdown formatting in the output',
     initialValue: true,
+  } as const,
+
+  llmVndOaiVerbosity: {
+    label: 'Verbosity',
+    type: 'enum' as const,
+    description: 'Controls response length and detail level',
+    values: ['low', 'medium', 'high'] as const,
+    requiredFallback: 'medium',
   } as const,
 
   llmVndOaiWebSearchContext: {
@@ -142,6 +259,15 @@ export const DModelParameterRegistry = {
     initialValue: false,
   } as const,
 
+  llmVndOaiImageGeneration: {
+    label: 'Image Generation',
+    type: 'enum' as const,
+    description: 'Image generation mode and quality',
+    values: ['mq', 'hq', 'hq_edit' /* precise input editing */, 'hq_png' /* uncompressed */] as const,
+    // No initialValue - defaults to undefined (off)
+    // No requiredFallback - this is optional
+  } as const,
+
   // Perplexity-specific parameters
 
   // llmVndPerplexityReasoningEffort - we reuse the OpenAI reasoning effort parameter
@@ -154,12 +280,45 @@ export const DModelParameterRegistry = {
     // requiredFallback: 'unfiltered',
   } as const,
 
+  llmVndOrtWebSearch: {
+    label: 'Web Search',
+    type: 'enum' as const,
+    description: 'Enable OpenRouter web search (uses native search for OpenAI/Anthropic, Exa for others)',
+    values: ['auto'] as const,
+    // No initialValue - undefined means off
+  } as const,
+
   llmVndPerplexitySearchMode: {
     label: 'Search Mode',
     type: 'enum' as const,
     description: 'Type of sources to search',
     values: ['default', 'academic'] as const,
     // requiredFallback: 'default', // or leave unset for "unspecified"
+  } as const,
+
+  // xAI-specific parameters
+
+  llmVndXaiSearchMode: {
+    label: 'Search Mode',
+    type: 'enum' as const,
+    description: 'Controls when to use live search',
+    values: ['auto', 'on', 'off'] as const,
+    initialValue: 'auto', // we default to auto for our users, to get them search out of the box
+  } as const,
+
+  llmVndXaiSearchSources: {
+    label: 'Search Sources',
+    type: 'string' as const,
+    description: 'Comma-separated sources (web,x,news,rss)',
+    initialValue: 'web,x', // defaults to web,x as per xAI docs
+  } as const,
+
+  llmVndXaiSearchDateFilter: {
+    label: 'Search From Date',
+    type: 'enum' as const,
+    description: 'Filter search results by publication date',
+    values: ['unfiltered', '1d', '1w', '1m', '6m', '1y'] as const,
+    // requiredFallback: 'unfiltered',
   } as const,
 
 } as const;
@@ -233,7 +392,11 @@ export function applyModelParameterInitialValues(destValues: DModelParameterValu
 }
 
 
-const _requiredParamId: DModelParameterId[] = ['llmRef', 'llmResponseTokens', 'llmTemperature'] as const;
+const _requiredParamId: DModelParameterId[] = [
+  // 'llmRef', // disabled: we know this can't have a fallback value in the registry
+  'llmResponseTokens', // DModelParameterRegistry.llmResponseTokens.requiredFallback = FALLBACK_LLM_PARAM_RESPONSE_TOKENS
+  'llmTemperature', // DModelParameterRegistry.llmTemperature.requiredFallback = FALLBACK_LLM_PARAM_TEMPERATURE
+] as const;
 
 export function getAllModelParameterValues(initialParameters: undefined | DModelParameterValues, userParameters?: DModelParameterValues): DModelParameterValues {
 
@@ -253,6 +416,9 @@ export function getAllModelParameterValues(initialParameters: undefined | DModel
 }
 
 
+/**
+ * NOTE: this is actually only used for `llmResponseTokens` from the Composer for now (!)
+ */
 export function getModelParameterValueOrThrow<T extends DModelParameterId>(
   paramId: T,
   initialValues: undefined | DModelParameterValues,

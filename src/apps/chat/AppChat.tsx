@@ -5,9 +5,9 @@ import type { SxProps } from '@mui/joy/styles/types';
 import { Box, useTheme } from '@mui/joy';
 
 import { DEV_MODE_SETTINGS } from '../settings-modal/UxLabsSettings';
-import { DiagramConfig, DiagramsModal } from '~/modules/aifn/digrams/DiagramsModal';
-import { FlattenerModal } from '~/modules/aifn/flatten/FlattenerModal';
-import { TradeConfig, TradeModal } from '~/modules/trade/TradeModal';
+
+import type { DiagramConfig } from '~/modules/aifn/digrams/DiagramsModal';
+import type { TradeConfig } from '~/modules/trade/TradeModal';
 import { downloadSingleChat, importConversationsFromFilesAtRest, openConversationsAtRestPicker } from '~/modules/trade/trade.client';
 import { imaginePromptFromTextOrThrow } from '~/modules/aifn/imagine/imaginePromptFromText';
 import { elevenLabsSpeakText } from '~/modules/elevenlabs/elevenlabs.client';
@@ -19,9 +19,9 @@ import type { OptimaBarControlMethods } from '~/common/layout/optima/bar/OptimaB
 import { ConfirmationModal } from '~/common/components/modals/ConfirmationModal';
 import { ConversationsManager } from '~/common/chat-overlay/ConversationsManager';
 import { ErrorBoundary } from '~/common/components/ErrorBoundary';
-import { LLM_IF_ANT_PromptCaching, LLM_IF_OAI_Vision } from '~/common/stores/llms/llms.types';
+import { getLLMContextTokens, LLM_IF_ANT_PromptCaching, LLM_IF_OAI_Vision } from '~/common/stores/llms/llms.types';
 import { OptimaDrawerIn, OptimaPanelIn, OptimaToolbarIn } from '~/common/layout/optima/portals/OptimaPortalsIn';
-import { PanelResizeInset } from '~/common/components/panes/GoodPanelResizeHandler';
+import { PanelResizeInset } from '~/common/components/PanelResizeInset';
 import { Release } from '~/common/app.release';
 import { ScrollToBottom } from '~/common/scroll-to-bottom/ScrollToBottom';
 import { ScrollToBottomButton } from '~/common/scroll-to-bottom/ScrollToBottomButton';
@@ -44,9 +44,9 @@ import { useUIComplexityIsMinimal } from '~/common/stores/store-ui';
 import { useUXLabsStore } from '~/common/stores/store-ux-labs';
 
 import { ChatPane } from './components/layout-pane/ChatPane';
-import { ChatBarAltBeam } from './components/layout-bar/ChatBarAltBeam';
+import { ChatBarBeam } from './components/layout-bar/ChatBarBeam';
 import { ChatBarAltTitle } from './components/layout-bar/ChatBarAltTitle';
-import { ChatBarDropdowns } from './components/layout-bar/ChatBarDropdowns';
+import { ChatBarChat } from './components/layout-bar/ChatBarChat';
 import { ChatBeamWrapper } from './components/ChatBeamWrapper';
 import { ChatDrawerMemo } from './components/layout-drawer/ChatDrawer';
 import { ChatMessageList } from './components/ChatMessageList';
@@ -110,7 +110,7 @@ const composerOpenSx: SxProps = {
 
 const composerOpenMobileSx: SxProps = {
   zIndex: 21, // allocates the surface, possibly enables shadow if we like
-  pt: 0.5, // have some breathing room
+  py: 0.5, // have some breathing room
   // boxShadow: '0px -1px 8px -2px rgba(0, 0, 0, 0.4)',
   ...composerOpenSx,
 } as const;
@@ -118,6 +118,12 @@ const composerOpenMobileSx: SxProps = {
 // const composerClosedSx: SxProps = {
 //   display: 'none',
 // };
+
+
+// Lazy-loaded Modals
+const DiagramsModalLazy = React.lazy(() => import('~/modules/aifn/digrams/DiagramsModal').then(module => ({ default: module.DiagramsModal })));
+const FlattenerModalLazy = React.lazy(() => import('~/modules/aifn/flatten/FlattenerModal').then(module => ({ default: module.FlattenerModal })));
+const TradeModalLazy = React.lazy(() => import('~/modules/trade/TradeModal').then(module => ({ default: module.TradeModal })));
 
 
 export function AppChat() {
@@ -180,6 +186,7 @@ export function AppChat() {
   const beamOpenStoreInFocusedPane = focusedPaneIndex === null ? null
     : !beamsOpens?.[focusedPaneIndex] ? null
       : paneBeamStores?.[focusedPaneIndex] ?? null;
+  const focusedChatBeamOpen = focusedPaneIndex !== null && !!beamsOpens?.[focusedPaneIndex];
 
   const {
     // focused
@@ -209,7 +216,7 @@ export function AppChat() {
   });
 
   // Composer Auto-hiding
-  const forceComposerHide = !!beamOpenStoreInFocusedPane;
+  const forceComposerHide = !!beamOpenStoreInFocusedPane /* || !focusedPaneConversationId */; // auto-hide when no chat (the 'please select a conversation...' state) doesn't feel good
   const composerAutoHide = useComposerAutoHide(forceComposerHide, composerHasContent);
 
   // Window actions
@@ -465,15 +472,15 @@ export function AppChat() {
   const barAltTitle = showAltTitleBar ? focusedChatTitle ?? 'No Chat' : null;
 
   const focusedBarContent = React.useMemo(() => beamOpenStoreInFocusedPane
-      ? <ChatBarAltBeam conversationTitle={focusedChatTitle ?? 'No Chat'} beamStore={beamOpenStoreInFocusedPane} isMobile={isMobile} />
+      ? <ChatBarBeam conversationTitle={focusedChatTitle ?? 'No Chat'} beamStore={beamOpenStoreInFocusedPane} isMobile={isMobile} />
       : (barAltTitle === null)
-        ? <ChatBarDropdowns conversationId={focusedPaneConversationId} llmDropdownRef={llmDropdownRef} personaDropdownRef={personaDropdownRef} />
+        ? <ChatBarChat conversationId={focusedPaneConversationId} llmDropdownRef={llmDropdownRef} personaDropdownRef={personaDropdownRef} />
         : <ChatBarAltTitle conversationId={focusedPaneConversationId} conversationTitle={barAltTitle} />
     , [barAltTitle, beamOpenStoreInFocusedPane, focusedChatTitle, focusedPaneConversationId, isMobile],
   );
 
 
-  // Disabled by default, as it lags the opening of the drawer and immediatly vanishes during the closing animation
+  // Disabled by default, as it lags the opening of the drawer and immediately vanishes during the closing animation
   const isDrawerOpen = true; // useOptimaDrawerOpen();
 
   const drawerContent = React.useMemo(() => !isDrawerOpen ? null :
@@ -483,6 +490,7 @@ export function AppChat() {
         activeFolderId={activeFolderId}
         chatPanesConversationIds={paneUniqueConversationIds}
         disableNewButton={disableNewButton}
+        focusedChatBeamOpen={focusedChatBeamOpen}
         onConversationActivate={handleOpenConversationInFocusedPane}
         onConversationBranch={handleConversationBranch}
         onConversationNew={handleConversationNewInFocusedPane}
@@ -491,7 +499,7 @@ export function AppChat() {
         onConversationsImportDialog={handleConversationImportDialog}
         setActiveFolderId={setActiveFolderId}
       />,
-    [activeFolderId, disableNewButton, focusedPaneConversationId, handleConversationBranch, handleConversationExport, handleConversationImportDialog, handleConversationNewInFocusedPane, handleDeleteConversations, handleOpenConversationInFocusedPane, isDrawerOpen, paneUniqueConversationIds],
+    [activeFolderId, disableNewButton, focusedChatBeamOpen, focusedPaneConversationId, handleConversationBranch, handleConversationExport, handleConversationImportDialog, handleConversationNewInFocusedPane, handleDeleteConversations, handleOpenConversationInFocusedPane, isDrawerOpen, paneUniqueConversationIds],
   );
 
   const focusedChatPanelContent = React.useMemo(() => !focusedPaneConversationId ? null :
@@ -517,7 +525,7 @@ export function AppChat() {
   React.useEffect(() => {
     // Debug: open a null chat
     if (Release.IsNodeDevBuild && intent.initialConversationId === 'null')
-      openConversationInFocusedPane(null! /* for debugging purporse */);
+      openConversationInFocusedPane(null! /* for debugging purpose */);
     // Open the initial conversation if set
     else if (intent.initialConversationId)
       openConversationInFocusedPane(intent.initialConversationId);
@@ -645,7 +653,7 @@ export function AppChat() {
               setFocusedPaneIndex(idx);
             }}
             onCollapse={() => {
-              // NOTE: despite the delay to try to let the draggin settle, there seems to be an issue with the Pane locking the screen
+              // NOTE: despite the delay to try to let the dragging settle, there seems to be an issue with the Pane locking the screen
               // setTimeout(() => removePane(idx), 50);
               // more than 2 will result in an assertion from the framework
               if (chatPanes.length === 2) removePane(idx);
@@ -672,7 +680,7 @@ export function AppChat() {
                 // NOTE: this is a workaround for the 'stuck-after-collapse-close' issue. We will collapse the 'other' pane, which
                 // will get it removed (onCollapse), and somehow this pane will be stuck with a pointerEvents: 'none' style, which de-facto
                 // disables further interaction with the chat. This is a workaround to re-enable the pointer events.
-                // The root cause seems to be a Dragstate not being reset properly, however the pointerEvents has been set since 0.0.56 while
+                // The root cause seems to be a Drag state not being reset properly, however the pointerEvents has been set since 0.0.56 while
                 // it was optional before: https://github.com/bvaughn/react-resizable-panels/issues/241
                 pointerEvents: 'auto',
               }),
@@ -706,7 +714,7 @@ export function AppChat() {
                   conversationHandler={_paneChatHandler}
                   capabilityHasT2I={capabilityHasT2I}
                   chatLLMAntPromptCaching={chatLLM?.interfaces?.includes(LLM_IF_ANT_PromptCaching) ?? false}
-                  chatLLMContextTokens={chatLLM?.contextTokens ?? null}
+                  chatLLMContextTokens={getLLMContextTokens(chatLLM) ?? null}
                   chatLLMSupportsImages={chatLLM?.interfaces?.includes(LLM_IF_OAI_Vision) ?? false}
                   fitScreen={isMobile || isMultiPane}
                   isMobile={isMobile}
@@ -777,28 +785,34 @@ export function AppChat() {
 
     {/* Diagrams */}
     {!!diagramConfig && (
-      <DiagramsModal
-        config={diagramConfig}
-        onClose={() => setDiagramConfig(null)}
-      />
+      <React.Suspense fallback={null}>
+        <DiagramsModalLazy
+          config={diagramConfig}
+          onClose={() => setDiagramConfig(null)}
+        />
+      </React.Suspense>
     )}
 
     {/* Flatten */}
     {!!flattenConversationId && (
-      <FlattenerModal
-        conversationId={flattenConversationId}
-        onConversationBranch={handleConversationBranch}
-        onClose={() => setFlattenConversationId(null)}
-      />
+      <React.Suspense fallback={null}>
+        <FlattenerModalLazy
+          conversationId={flattenConversationId}
+          onConversationBranch={handleConversationBranch}
+          onClose={() => setFlattenConversationId(null)}
+        />
+      </React.Suspense>
     )}
 
     {/* Import / Export  */}
     {!!tradeConfig && (
-      <TradeModal
-        config={tradeConfig}
-        onConversationActivate={handleOpenConversationInFocusedPane}
-        onClose={() => setTradeConfig(null)}
-      />
+      <React.Suspense fallback={null}>
+        <TradeModalLazy
+          config={tradeConfig}
+          onConversationActivate={handleOpenConversationInFocusedPane}
+          onClose={() => setTradeConfig(null)}
+        />
+      </React.Suspense>
     )}
 
   </>;
