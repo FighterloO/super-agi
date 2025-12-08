@@ -8,10 +8,18 @@ import { aixSpillSystemToUser, approxDocPart_To_String, approxInReferenceTo_To_X
 const hotFixImagePartsFirst = true; // https://ai.google.dev/gemini-api/docs/image-understanding#tips-best-practices
 const hotFixReplaceEmptyMessagesWithEmptyTextPart = true;
 
+// [Gemini 3, 2025-11-20] Bypass dummy thoughtSignature for Gemini 3+ validation
+// https://ai.google.dev/gemini-api/docs/thought-signatures
+const GEMINI_BYPASS_THOUGHT_SIGNATURE = 'context_engineering_is_the_way_to_go';
+
 
 export function aixToGeminiGenerateContent(model: AixAPI_Model, _chatGenerate: AixAPIChatGenerate_Request, geminiSafetyThreshold: GeminiWire_Safety.HarmBlockThreshold, jsonOutput: boolean, _streaming: boolean): TRequest {
 
-  // Note: the streaming setting is ignored as it only belongs in the path
+  // Hotfixes - reduce these to the minimum, as they shall be higher-level resolved
+  const isFamilyNanoBanana = model.id.includes('nano-banana') || model.id.includes('gemini-3-pro-image-preview');
+  const api3RequiresSignatures = isFamilyNanoBanana;
+
+  // Note: the streaming setting is ignored here as it only belongs in the path
 
   // Pre-process CGR - approximate spill of System to User message - note: no need to flush as every message is not batched
   const chatGenerate = aixSpillSystemToUser(_chatGenerate);
@@ -51,7 +59,12 @@ export function aixToGeminiGenerateContent(model: AixAPI_Model, _chatGenerate: A
   }
 
   // Chat Messages
-  const contents: TRequest['contents'] = _toGeminiContents(chatGenerate.chatSequence);
+  const contents: TRequest['contents'] = _toGeminiContents(chatGenerate.chatSequence, api3RequiresSignatures);
+
+  // constrained output modes - only JSON (not tool invocations for now)
+  const jsonOutputEnabled = !!model.strictJsonOutput || jsonOutput;
+  const jsonOutputSchema = model.strictJsonOutput?.schema;
+  // const strictToolInvocation = model.strictToolInvocations; // Gemini does not seem to support this yet - need to confirm
 
   // Construct the request payload
   const payload: TRequest = {
@@ -60,8 +73,8 @@ export function aixToGeminiGenerateContent(model: AixAPI_Model, _chatGenerate: A
     systemInstruction,
     generationConfig: {
       stopSequences: undefined, // (default, optional)
-      responseMimeType: jsonOutput ? 'application/json' : undefined,
-      responseSchema: undefined, // (default, optional) NOTE: for JSON output, we'd take the schema here
+      responseMimeType: jsonOutputEnabled ? 'application/json' : undefined,
+      responseSchema: jsonOutputSchema,
       candidateCount: undefined, // (default, optional)
       maxOutputTokens: model.maxTokens !== undefined ? model.maxTokens : undefined,
       ...(model.temperature !== null ? { temperature: model.temperature !== undefined ? model.temperature : undefined } : {}),
@@ -80,8 +93,8 @@ export function aixToGeminiGenerateContent(model: AixAPI_Model, _chatGenerate: A
   if (model.vndGeminiShowThoughts === true || model.vndGeminiThinkingBudget !== undefined || model.vndGeminiThinkingLevel) {
     const thinkingConfig: Exclude<TRequest['generationConfig'], undefined>['thinkingConfig'] = {};
 
-    // This seems deprecated keep it in case Gemini turns it on again
-    if (model.vndGeminiShowThoughts)
+    // This shows mainly 'summaries' of thoughts, and we enable it for most cases where thinking is requested
+    if (model.vndGeminiShowThoughts || (model.vndGeminiThinkingBudget ?? 0) > 1 || model.vndGeminiThinkingLevel === 'high' || model.vndGeminiThinkingLevel === 'medium')
       thinkingConfig.includeThoughts = true;
 
     // [Gemini 3, 2025-11-18] Thinking Level (replaces thinkingBudget for Gemini 3)
@@ -109,10 +122,11 @@ export function aixToGeminiGenerateContent(model: AixAPI_Model, _chatGenerate: A
     payload.generationConfig!.mediaResolution = mediaResolutionValuesMap[model.vndGeminiMediaResolution];
   }
 
-  // [Gemini, 2025-10-02] Image generation: aspect ratio configuration
-  if (model.vndGeminiAspectRatio) {
+  // [Gemini, 2025-10-02] [Gemini, 2025-11-20] Image generation: aspect ratio and size configuration
+  if (model.vndGeminiAspectRatio || model.vndGeminiImageSize) {
     payload.generationConfig!.imageConfig = {
-      aspectRatio: model.vndGeminiAspectRatio,
+      ...(model.vndGeminiAspectRatio ? { aspectRatio: model.vndGeminiAspectRatio } : {}),
+      ...(model.vndGeminiImageSize ? { imageSize: model.vndGeminiImageSize } : {}),
     };
   }
 
@@ -203,8 +217,7 @@ export function aixToGeminiGenerateContent(model: AixAPI_Model, _chatGenerate: A
   }
 
   // [Gemini, 2025-08-18] URL Context: add tool when enabled
-  // Auto-enable with Google Search for backwards compatibility and ease of use
-  if (model.vndGeminiUrlContext === 'auto' && !skipHostedToolsDueToCustomTools) {
+  if (model.vndGeminiUrlContext === 'auto' && !isFamilyNanoBanana && !skipHostedToolsDueToCustomTools) {
     if (!payload.tools) payload.tools = [];
 
     // Build the URL Context tool configuration (empty object)
@@ -229,7 +242,7 @@ export function aixToGeminiGenerateContent(model: AixAPI_Model, _chatGenerate: A
 type TRequest = GeminiWire_API_Generate_Content.Request;
 
 
-function _toGeminiContents(chatSequence: AixMessages_ChatMessage[]): GeminiWire_Messages.Content[] {
+function _toGeminiContents(chatSequence: AixMessages_ChatMessage[], apiRequiresSignatures: boolean): GeminiWire_Messages.Content[] {
 
   // Remove messages that are made of empty parts
   // if (hotFixRemoveEmptyMessages)
@@ -258,15 +271,22 @@ function _toGeminiContents(chatSequence: AixMessages_ChatMessage[]): GeminiWire_
     }
 
     for (const part of message.parts) {
+      let partRequiresSignature = false;
       switch (part.pt) {
 
         case 'text':
           parts.push(GeminiWire_ContentParts.TextPart(part.text));
+
+          // [Gemini, 2025-11-20] Nano Banana Pro requires thoughtSignature on the first model text part
+          if (apiRequiresSignatures && message.role === 'model')
+            partRequiresSignature = true;
           break;
 
         case 'inline_audio':
         case 'inline_image':
           parts.push(GeminiWire_ContentParts.InlineDataPart(part.mimeType, part.base64));
+          if (apiRequiresSignatures)
+            partRequiresSignature = true;
           break;
 
         case 'doc':
@@ -356,6 +376,22 @@ function _toGeminiContents(chatSequence: AixMessages_ChatMessage[]): GeminiWire_
         default:
           const _exhaustiveCheck: never = part;
           throw new Error(`Unsupported part type in Chat message: ${(part as any).pt}`);
+      }
+
+      // apply thoughtSignature if present
+      if (parts.length) {
+        const tsTarget = parts[parts.length - 1];
+
+        // apply thoughtSignature to the last part if applicable
+        if ('_vnd' in part && part._vnd?.gemini?.thoughtSignature) {
+          tsTarget.thoughtSignature = part._vnd.gemini.thoughtSignature;
+        }
+        // if not applied yet, and required for this part type, apply bypass dummy and warn
+        else if (partRequiresSignature) {
+          tsTarget.thoughtSignature = GEMINI_BYPASS_THOUGHT_SIGNATURE;
+          // [Gemini 3, 2025-11-20] Cross-provider or edited content warning
+          console.log(`[Gemini 3] ${part.pt} missing thoughtSignature - bypass applied`);
+        }
       }
     }
 
